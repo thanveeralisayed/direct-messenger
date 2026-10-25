@@ -45,7 +45,20 @@ async function start() {
     origin: '*',
   });
 
-  // Health check
+  // Root and Health checks
+  app.get('/', async () => {
+    return {
+      status: 'ok',
+      service: 'direct-ephemeral-relay',
+      message: 'Direct Messenger Relay Server is active',
+      timestamp: Date.now(),
+    };
+  });
+
+  app.head('/', async (request, reply) => {
+    reply.status(200).send();
+  });
+
   app.get('/api/v1/health', async () => {
     return {
       status: 'ok',
