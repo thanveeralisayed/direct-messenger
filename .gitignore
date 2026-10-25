@@ -1,0 +1,14 @@
+# Root gitignore
+.DS_Store
+*.log
+.env
+.env.*
+
+# App config
+app/lib/core/config.dart
+
+# Build & temp
+app/build/
+server/dist/
+server/node_modules/
+server/data/
