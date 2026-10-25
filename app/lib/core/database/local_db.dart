@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/message_model.dart';
@@ -20,68 +22,84 @@ class LocalDatabase {
   }
 
   Future<Database> _initDatabase() async {
+    if (kIsWeb) {
+      final factory = createDatabaseFactoryFfiWeb();
+      return await factory.openDatabase(
+        'direct_chats.db',
+        options: OpenDatabaseOptions(
+          version: 3,
+          onCreate: _createTables,
+          onUpgrade: _upgradeTables,
+        ),
+      );
+    }
+
     final docsDir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(docsDir.path, 'direct_chats.db');
 
     return await openDatabase(
       dbPath,
       version: 3,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE contacts (
-            username TEXT PRIMARY KEY,
-            identity_public_key TEXT NOT NULL,
-            safety_number TEXT NOT NULL,
-            is_verified INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            disappearing_seconds INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
-
-        await db.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            conversation_user TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            recipient TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            is_outgoing INTEGER NOT NULL,
-            expires_at INTEGER,
-            message_type TEXT NOT NULL DEFAULT 'text',
-            media_path TEXT
-          )
-        ''');
-
-        await db.execute('''
-          CREATE INDEX idx_messages_conversation 
-          ON messages (conversation_user, timestamp ASC)
-        ''');
-
-        await db.execute('''
-          CREATE INDEX idx_messages_expires 
-          ON messages (expires_at)
-        ''');
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          try {
-            await db.execute('ALTER TABLE contacts ADD COLUMN disappearing_seconds INTEGER NOT NULL DEFAULT 0');
-          } catch (_) {}
-          try {
-            await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
-            await db.execute('CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages (expires_at)');
-          } catch (_) {}
-        }
-        if (oldVersion < 3) {
-          try {
-            await db.execute("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'");
-            await db.execute('ALTER TABLE messages ADD COLUMN media_path TEXT');
-          } catch (_) {}
-        }
-      },
+      onCreate: _createTables,
+      onUpgrade: _upgradeTables,
     );
+  }
+
+  static Future<void> _createTables(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE contacts (
+        username TEXT PRIMARY KEY,
+        identity_public_key TEXT NOT NULL,
+        safety_number TEXT NOT NULL,
+        is_verified INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        disappearing_seconds INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_user TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        recipient TEXT NOT NULL,
+        content TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        is_outgoing INTEGER NOT NULL,
+        expires_at INTEGER,
+        message_type TEXT NOT NULL DEFAULT 'text',
+        media_path TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_messages_conversation 
+      ON messages (conversation_user, timestamp ASC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX idx_messages_expires 
+      ON messages (expires_at)
+    ''');
+  }
+
+  static Future<void> _upgradeTables(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('ALTER TABLE contacts ADD COLUMN disappearing_seconds INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages (expires_at)');
+      } catch (_) {}
+    }
+    if (oldVersion < 3) {
+      try {
+        await db.execute("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'");
+        await db.execute('ALTER TABLE messages ADD COLUMN media_path TEXT');
+      } catch (_) {}
+    }
   }
 
   // --- Contacts ---

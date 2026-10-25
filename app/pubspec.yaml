@@ -48,6 +48,7 @@ dependencies:
   image_picker: ^1.2.4
   mobile_scanner: ^7.4.2
   local_auth: ^3.0.2
+  sqflite_common_ffi_web: ^1.2.0
 
 dev_dependencies:
   flutter_test:
