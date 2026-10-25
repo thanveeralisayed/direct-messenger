@@ -33,8 +33,24 @@ class KeyStorage {
   Future<String?> getPublicKey() => _storage.read(key: _keyPublicKey);
 
   Future<String> getServerUrl() async {
+    // In production mode (enableServerConfigUI == false), strictly use defaultServerUrl
+    if (!AppConfig.enableServerConfigUI) {
+      return AppConfig.defaultServerUrl;
+    }
+
     final url = await _storage.read(key: _keyServerUrl);
-    if (url != null && url.trim().isNotEmpty) return url.trim();
+    if (url != null && url.trim().isNotEmpty) {
+      final trimmed = url.trim();
+      // If a local IP was previously saved during testing, but the default URL is now a cloud URL, purge the stale local IP
+      final isLocalStored = trimmed.contains('192.168.') || trimmed.contains('10.0.2.2') || trimmed.contains('localhost');
+      final isCloudDefault = AppConfig.defaultServerUrl.startsWith('https://');
+      if (isLocalStored && isCloudDefault) {
+        await _storage.delete(key: _keyServerUrl);
+        return AppConfig.defaultServerUrl;
+      }
+      return trimmed;
+    }
+
     if (kIsWeb) return 'http://localhost:8080';
     return AppConfig.defaultServerUrl;
   }
