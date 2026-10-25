@@ -132,6 +132,10 @@ async function start() {
         authenticatedUser = user;
         relay.registerConnection(user, socket);
         socket.send(JSON.stringify({ type: 'auth_success', username: user }));
+      } else {
+        socket.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or expired token' }));
+        socket.close(4001, 'Unauthorized');
+        return;
       }
     }
 

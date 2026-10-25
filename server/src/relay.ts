@@ -136,7 +136,7 @@ export class EphemeralRelay {
   private bufferPacket(recipient: string, packet: WSServerFrame): void {
     const queue = this.inMemoryQueue.get(recipient) || [];
     // Max 500 buffered packets per user to protect RAM
-    if (queue.length > 500) {
+    if (queue.length >= 500) {
       queue.shift(); // Drop oldest
     }
     queue.push({

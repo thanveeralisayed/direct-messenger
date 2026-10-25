@@ -13,7 +13,7 @@ import 'auth_provider.dart';
 
 class ChatProvider extends ChangeNotifier {
   final AuthProvider authProvider;
-  final LocalDatabase _db = LocalDatabase.instance;
+  final LocalDatabase _db;
   final CryptoService _crypto = CryptoService();
   final Uuid _uuid = const Uuid();
 
@@ -38,7 +38,8 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription? _typingSub;
   Timer? _purgeTimer;
 
-  ChatProvider({required this.authProvider}) {
+  ChatProvider({required this.authProvider, LocalDatabase? db})
+      : _db = db ?? LocalDatabase.instance {
     _bindRelayEvents();
     loadConversations();
     _startPeriodicPurge();
@@ -77,7 +78,7 @@ class ChatProvider extends ChangeNotifier {
     _activeContact = await _db.getContact(_activeChatUser!);
     await _db.markConversationAsRead(_activeChatUser!);
     _activeMessages = await _db.getMessages(_activeChatUser!);
-    loadConversations();
+    await loadConversations();
     notifyListeners();
   }
 

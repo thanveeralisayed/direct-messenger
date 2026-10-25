@@ -90,7 +90,7 @@ class LocalDatabase {
     final db = await database;
     await db.insert(
       'contacts',
-      contact.toMap(),
+      contact.copyWith(username: contact.username.toLowerCase()).toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -151,7 +151,9 @@ class LocalDatabase {
     final db = await database;
     await db.insert(
       'messages',
-      message.toMap(),
+      message.copyWith(
+        conversationUser: message.conversationUser.toLowerCase(),
+      ).toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
