@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/contact_model.dart';
@@ -20,6 +23,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
+  final ImagePicker _picker = ImagePicker();
   Timer? _typingDebounce;
   bool _isSending = false;
 
@@ -92,6 +96,120 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() => _isSending = false);
       }
     }
+  }
+
+  Future<void> _pickAndSendImage(ImageSource source, ChatProvider chat) async {
+    try {
+      final picked = await _picker.pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 82,
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      final fileName = picked.name.isNotEmpty ? picked.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (!mounted) return;
+
+      // Caption prompt dialog
+      final captionController = TextEditingController();
+      final shouldSend = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: DirectTheme.surface,
+          title: const Text('Send Encrypted Image'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'This image will be encrypted on your device with AES-256-GCM before sending. The server cannot view or store it.',
+                style: TextStyle(color: DirectTheme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: captionController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Caption (optional)',
+                  hintText: 'Add a message...',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Encrypt & Send'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldSend == true && mounted) {
+        setState(() => _isSending = true);
+        await chat.sendImageMessage(
+          recipient: widget.contact.username,
+          imageBytes: bytes,
+          fileName: fileName,
+          caption: captionController.text.trim(),
+        );
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: DirectTheme.error, content: Text('Error selecting image: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+    }
+  }
+
+  void _showAttachmentMenu(BuildContext context, ChatProvider chat) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: DirectTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: DirectTheme.primary),
+                title: const Text('Photo Gallery'),
+                subtitle: const Text('Select an image from device', style: TextStyle(color: DirectTheme.textMuted, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndSendImage(ImageSource.gallery, chat);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined, color: DirectTheme.accent),
+                title: const Text('Camera'),
+                subtitle: const Text('Take a new photo', style: TextStyle(color: DirectTheme.textMuted, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickAndSendImage(ImageSource.camera, chat);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatDisappearingDuration(int seconds) {
@@ -177,6 +295,139 @@ class _ChatScreenState extends State<ChatScreen> {
       case MessageStatus.failed:
         return const Icon(Icons.error_outline, size: 14, color: DirectTheme.error);
     }
+  }
+
+  void _showFullScreenImage(String path) {
+    if (kIsWeb) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(8),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(File(path), fit: BoxFit.contain),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(MessageModel msg) {
+    final isOutgoing = msg.isOutgoing;
+    final time = DateFormat('HH:mm').format(
+      DateTime.fromMillisecondsSinceEpoch(msg.timestamp),
+    );
+
+    final hasLocalImage = msg.isImage &&
+        msg.mediaPath != null &&
+        !kIsWeb &&
+        File(msg.mediaPath!).existsSync();
+
+    return Align(
+      alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isOutgoing ? DirectTheme.outgoingBubble : DirectTheme.incomingBubble,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
+            bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+          ),
+          border: Border.all(
+            color: isOutgoing ? DirectTheme.primary.withValues(alpha: 0.3) : const Color(0xFF243245),
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: isOutgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (msg.isImage) ...[
+              if (hasLocalImage)
+                GestureDetector(
+                  onTap: () => _showFullScreenImage(msg.mediaPath!),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(msg.mediaPath!),
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: DirectTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.image_outlined, size: 36, color: DirectTheme.primary),
+                      SizedBox(height: 6),
+                      Text('Encrypted Image', style: TextStyle(color: DirectTheme.textSecondary, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 6),
+            ],
+            if (msg.content.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  msg.content,
+                  style: const TextStyle(
+                    color: DirectTheme.textPrimary,
+                    fontSize: 15,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (msg.expiresAt != null && msg.expiresAt! > 0) ...[
+                  const Icon(Icons.timer_outlined, size: 11, color: DirectTheme.primary),
+                  const SizedBox(width: 3),
+                ],
+                Text(
+                  time,
+                  style: TextStyle(
+                    color: DirectTheme.textMuted.withValues(alpha: 0.9),
+                    fontSize: 10,
+                  ),
+                ),
+                if (isOutgoing) ...[
+                  const SizedBox(width: 4),
+                  _buildStatusIcon(msg.status),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -342,75 +593,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       itemCount: chat.activeMessages.length,
                       itemBuilder: (context, index) {
-                        final msg = chat.activeMessages[index];
-                        final isOutgoing = msg.isOutgoing;
-                        final time = DateFormat('HH:mm').format(
-                          DateTime.fromMillisecondsSinceEpoch(msg.timestamp),
-                        );
-
-                        return Align(
-                          alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.of(context).size.width * 0.78,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isOutgoing
-                                  ? DirectTheme.outgoingBubble
-                                  : DirectTheme.incomingBubble,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(16),
-                                topRight: const Radius.circular(16),
-                                bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
-                                bottomRight: Radius.circular(isOutgoing ? 4 : 16),
-                              ),
-                              border: Border.all(
-                                color: isOutgoing
-                                    ? DirectTheme.primary.withValues(alpha: 0.3)
-                                    : const Color(0xFF243245),
-                                width: 0.8,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: isOutgoing
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  msg.content,
-                                  style: const TextStyle(
-                                    color: DirectTheme.textPrimary,
-                                    fontSize: 15,
-                                    height: 1.3,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (msg.expiresAt != null && msg.expiresAt! > 0) ...[
-                                      const Icon(Icons.timer_outlined, size: 11, color: DirectTheme.primary),
-                                      const SizedBox(width: 3),
-                                    ],
-                                    Text(
-                                      time,
-                                      style: TextStyle(
-                                        color: DirectTheme.textMuted.withValues(alpha: 0.9),
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                    if (isOutgoing) ...[
-                                      const SizedBox(width: 4),
-                                      _buildStatusIcon(msg.status),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
+                        return _buildMessageBubble(chat.activeMessages[index]);
                       },
                     ),
             ),
@@ -432,7 +615,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // Input Bar
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: const BoxDecoration(
                 color: DirectTheme.surface,
                 border: Border(
@@ -442,6 +625,12 @@ class _ChatScreenState extends State<ChatScreen> {
               child: SafeArea(
                 child: Row(
                   children: [
+                    // Attachment button
+                    IconButton(
+                      icon: const Icon(Icons.add_photo_alternate_outlined, color: DirectTheme.primary, size: 24),
+                      tooltip: 'Attach Image',
+                      onPressed: _isSending ? null : () => _showAttachmentMenu(context, chat),
+                    ),
                     Expanded(
                       child: TextField(
                         controller: _inputController,
@@ -462,15 +651,21 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Container(
                       decoration: const BoxDecoration(
                         color: DirectTheme.primary,
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.send_rounded, color: DirectTheme.background, size: 20),
-                        onPressed: () => _handleSend(chat),
+                        icon: _isSending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: DirectTheme.background),
+                              )
+                            : const Icon(Icons.send_rounded, color: DirectTheme.background, size: 20),
+                        onPressed: _isSending ? null : () => _handleSend(chat),
                       ),
                     ),
                   ],

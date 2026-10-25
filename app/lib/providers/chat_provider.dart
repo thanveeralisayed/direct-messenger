@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../core/crypto/crypto_service.dart';
 import '../core/database/local_db.dart';
@@ -122,6 +126,24 @@ class ChatProvider extends ChangeNotifier {
     return contact;
   }
 
+  Future<String?> _saveMediaFile(String id, String fileName, Uint8List bytes) async {
+    if (kIsWeb) return null;
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final mediaDir = Directory(p.join(docsDir.path, 'direct_media'));
+      if (!await mediaDir.exists()) {
+        await mediaDir.create(recursive: true);
+      }
+      final filePath = p.join(mediaDir.path, '${id}_$fileName');
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+      return filePath;
+    } catch (e) {
+      debugPrint('Error saving media file: $e');
+      return null;
+    }
+  }
+
   Future<void> sendMessage({
     required String recipient,
     required String plaintext,
@@ -156,6 +178,7 @@ class ChatProvider extends ChangeNotifier {
       status: MessageStatus.pending,
       isOutgoing: true,
       expiresAt: expiresAt,
+      messageType: 'text',
     );
 
     // Save to local SQLite
@@ -175,6 +198,81 @@ class ChatProvider extends ChangeNotifier {
       );
 
       // 4. Send encrypted packet over WebSocket
+      authProvider.relayClient.sendMessagePacket(
+        id: messageId,
+        to: targetUser,
+        timestamp: now,
+        ephemeralPublicKey: encryptedPayload.ephemeralPublicKey,
+        iv: encryptedPayload.iv,
+        ciphertext: encryptedPayload.ciphertext,
+        disappearingSeconds: contact.disappearingSeconds,
+      );
+    } catch (e) {
+      await _db.updateMessageStatus(messageId, MessageStatus.failed);
+      _updateLocalMessageStatus(messageId, MessageStatus.failed);
+    }
+  }
+
+  Future<void> sendImageMessage({
+    required String recipient,
+    required Uint8List imageBytes,
+    required String fileName,
+    String caption = '',
+  }) async {
+    final myUsername = authProvider.username;
+    final myKeyPair = authProvider.identityKeyPair;
+    if (myUsername == null || myKeyPair == null) return;
+
+    final targetUser = recipient.toLowerCase();
+    ContactModel? contact = await _db.getContact(targetUser);
+    contact ??= await addContact(targetUser);
+    if (contact == null) throw Exception('Could not resolve recipient contact');
+
+    final messageId = _uuid.v4();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final int? expiresAt = (contact.disappearingSeconds > 0)
+        ? now + (contact.disappearingSeconds * 1000)
+        : null;
+
+    // Save local copy of media
+    final localSavedPath = await _saveMediaFile(messageId, fileName, imageBytes);
+
+    final localMsg = MessageModel(
+      id: messageId,
+      conversationUser: targetUser,
+      sender: myUsername,
+      recipient: targetUser,
+      content: caption,
+      timestamp: now,
+      status: MessageStatus.pending,
+      isOutgoing: true,
+      expiresAt: expiresAt,
+      messageType: 'image',
+      mediaPath: localSavedPath,
+    );
+
+    await _db.saveMessage(localMsg);
+    if (_activeChatUser == targetUser) {
+      _activeMessages.add(localMsg);
+      notifyListeners();
+    }
+    await loadConversations();
+
+    // Format media payload and encrypt end-to-end with AES-256-GCM
+    final payloadJson = jsonEncode({
+      'type': 'image',
+      'caption': caption,
+      'fileName': fileName,
+      'bytes': base64Encode(imageBytes),
+    });
+
+    try {
+      final recipientPublicKey = _crypto.importPublicKey(contact.identityPublicKey);
+      final encryptedPayload = await _crypto.encryptMessage(
+        plaintext: payloadJson,
+        recipientPublicKey: recipientPublicKey,
+      );
+
       authProvider.relayClient.sendMessagePacket(
         id: messageId,
         to: targetUser,
@@ -236,17 +334,40 @@ class ChatProvider extends ChangeNotifier {
         recipientKeyPair: myKeyPair,
       );
 
+      // Check if decrypted payload is an encrypted image
+      String messageType = 'text';
+      String? mediaPath;
+      String content = decryptedText;
+
+      if (decryptedText.startsWith('{"type":"image"')) {
+        try {
+          final parsed = jsonDecode(decryptedText) as Map<String, dynamic>;
+          if (parsed['type'] == 'image') {
+            messageType = 'image';
+            content = (parsed['caption'] as String?) ?? '';
+            final rawBase64 = parsed['bytes'] as String?;
+            final fileName = (parsed['fileName'] as String?) ?? 'photo.jpg';
+            if (rawBase64 != null) {
+              final bytes = base64Decode(rawBase64);
+              mediaPath = await _saveMediaFile(id, fileName, bytes);
+            }
+          }
+        } catch (_) {}
+      }
+
       final isCurrentlyOpen = _activeChatUser == from;
       final msg = MessageModel(
         id: id,
         conversationUser: from,
         sender: from,
         recipient: authProvider.username!,
-        content: decryptedText,
+        content: content,
         timestamp: timestamp,
         status: isCurrentlyOpen ? MessageStatus.read : MessageStatus.delivered,
         isOutgoing: false,
         expiresAt: expiresAt,
+        messageType: messageType,
+        mediaPath: mediaPath,
       );
 
       await _db.saveMessage(msg);

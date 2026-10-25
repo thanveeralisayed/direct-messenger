@@ -11,11 +11,13 @@ class MessageModel {
   final String conversationUser; // Username of chat partner
   final String sender; // Sender username
   final String recipient; // Recipient username
-  final String content; // Plaintext content (decrypted locally)
+  final String content; // Plaintext content or image caption (decrypted locally)
   final int timestamp; // Milliseconds epoch
   final MessageStatus status;
   final bool isOutgoing;
   final int? expiresAt; // Epoch ms when message should auto-delete (or null if never)
+  final String messageType; // 'text' or 'image'
+  final String? mediaPath; // Local absolute filepath on device
 
   MessageModel({
     required this.id,
@@ -27,12 +29,16 @@ class MessageModel {
     required this.status,
     required this.isOutgoing,
     this.expiresAt,
+    this.messageType = 'text',
+    this.mediaPath,
   });
 
   bool get isExpired {
     if (expiresAt == null || expiresAt! <= 0) return false;
     return DateTime.now().millisecondsSinceEpoch >= expiresAt!;
   }
+
+  bool get isImage => messageType == 'image';
 
   MessageModel copyWith({
     String? id,
@@ -44,6 +50,8 @@ class MessageModel {
     MessageStatus? status,
     bool? isOutgoing,
     int? expiresAt,
+    String? messageType,
+    String? mediaPath,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -55,6 +63,8 @@ class MessageModel {
       status: status ?? this.status,
       isOutgoing: isOutgoing ?? this.isOutgoing,
       expiresAt: expiresAt ?? this.expiresAt,
+      messageType: messageType ?? this.messageType,
+      mediaPath: mediaPath ?? this.mediaPath,
     );
   }
 
@@ -69,6 +79,8 @@ class MessageModel {
       'status': status.name,
       'is_outgoing': isOutgoing ? 1 : 0,
       'expires_at': expiresAt,
+      'message_type': messageType,
+      'media_path': mediaPath,
     };
   }
 
@@ -86,6 +98,8 @@ class MessageModel {
       ),
       isOutgoing: (map['is_outgoing'] as int) == 1,
       expiresAt: map['expires_at'] as int?,
+      messageType: (map['message_type'] as String?) ?? 'text',
+      mediaPath: map['media_path'] as String?,
     );
   }
 }

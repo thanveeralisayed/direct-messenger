@@ -25,7 +25,7 @@ class LocalDatabase {
 
     return await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE contacts (
@@ -48,7 +48,9 @@ class LocalDatabase {
             timestamp INTEGER NOT NULL,
             status TEXT NOT NULL,
             is_outgoing INTEGER NOT NULL,
-            expires_at INTEGER
+            expires_at INTEGER,
+            message_type TEXT NOT NULL DEFAULT 'text',
+            media_path TEXT
           )
         ''');
 
@@ -70,6 +72,12 @@ class LocalDatabase {
           try {
             await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
             await db.execute('CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages (expires_at)');
+          } catch (_) {}
+        }
+        if (oldVersion < 3) {
+          try {
+            await db.execute("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'");
+            await db.execute('ALTER TABLE messages ADD COLUMN media_path TEXT');
           } catch (_) {}
         }
       },

@@ -99,7 +99,9 @@ void main() {
           timestamp INTEGER NOT NULL,
           status TEXT NOT NULL,
           is_outgoing INTEGER NOT NULL,
-          expires_at INTEGER
+          expires_at INTEGER,
+          message_type TEXT NOT NULL DEFAULT 'text',
+          media_path TEXT
         )
       ''');
 
