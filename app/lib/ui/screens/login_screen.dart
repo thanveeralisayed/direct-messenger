@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../theme.dart';
+import '../../core/config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -102,11 +103,12 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          IconButton(
-            tooltip: 'Server Settings',
-            icon: const Icon(Icons.settings_outlined, color: DirectTheme.textSecondary),
-            onPressed: () => _showServerSettings(context, auth),
-          ),
+          if (AppConfig.enableServerConfigUI)
+            IconButton(
+              tooltip: 'Server Settings',
+              icon: const Icon(Icons.settings_outlined, color: DirectTheme.textSecondary),
+              onPressed: () => _showServerSettings(context, auth),
+            ),
         ],
       ),
       body: SafeArea(

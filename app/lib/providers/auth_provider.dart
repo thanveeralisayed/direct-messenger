@@ -3,6 +3,7 @@ import 'package:cryptography/cryptography.dart';
 import '../core/crypto/crypto_service.dart';
 import '../core/crypto/key_storage.dart';
 import '../core/network/relay_client.dart';
+import '../core/config.dart';
 
 class AuthProvider extends ChangeNotifier {
   final CryptoService _crypto = CryptoService();
@@ -14,7 +15,7 @@ class AuthProvider extends ChangeNotifier {
   SimpleKeyPair? _identityKeyPair;
   String? _publicKeyBase64;
   String? _safetyNumber;
-  String _serverUrl = 'http://10.0.2.2:8080';
+  String _serverUrl = AppConfig.defaultServerUrl;
   bool _isLoading = true;
   String? _errorMessage;
 

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../config.dart';
 
 class KeyStorage {
   final FlutterSecureStorage _storage = const FlutterSecureStorage(
@@ -33,7 +34,9 @@ class KeyStorage {
 
   Future<String> getServerUrl() async {
     final url = await _storage.read(key: _keyServerUrl);
-    return url ?? (kIsWeb ? 'http://localhost:8080' : 'http://10.0.2.2:8080');
+    if (url != null && url.trim().isNotEmpty) return url.trim();
+    if (kIsWeb) return 'http://localhost:8080';
+    return AppConfig.defaultServerUrl;
   }
 
   Future<void> setServerUrl(String url) async {
