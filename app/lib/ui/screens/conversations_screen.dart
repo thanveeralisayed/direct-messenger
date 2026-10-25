@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../dialogs/add_contact_dialog.dart';
 import '../dialogs/safety_number_dialog.dart';
+import '../dialogs/security_settings_dialog.dart';
 import '../theme.dart';
 import 'chat_screen.dart';
 
@@ -119,6 +120,11 @@ class ConversationsScreen extends StatelessWidget {
             onSelected: (value) async {
               if (value == 'fingerprint') {
                 _showMyFingerprint(context, auth);
+              } else if (value == 'security') {
+                showDialog(
+                  context: context,
+                  builder: (_) => const SecuritySettingsDialog(),
+                );
               } else if (value == 'logout') {
                 await auth.logout();
               } else if (value == 'wipe') {
@@ -159,6 +165,16 @@ class ConversationsScreen extends StatelessWidget {
                     const Icon(Icons.key, size: 18, color: DirectTheme.primary),
                     const SizedBox(width: 8),
                     Text('@${auth.username} Key Fingerprint'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'security',
+                child: Row(
+                  children: [
+                    Icon(Icons.shield_outlined, size: 18, color: DirectTheme.primary),
+                    SizedBox(width: 8),
+                    Text('Privacy & Security'),
                   ],
                 ),
               ),
