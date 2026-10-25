@@ -16,8 +16,7 @@ void main() {
     test('End-to-end binary payload encryption, decryption, and byte fidelity', () async {
       final crypto = CryptoService();
 
-      // 1. Generate keys for Alice and Bob
-      final aliceKeyPair = await crypto.generateIdentityKeyPair();
+      // 1. Generate keys for Bob
       final bobKeyPair = await crypto.generateIdentityKeyPair();
       final bobPubKey = await bobKeyPair.extractPublicKey();
 

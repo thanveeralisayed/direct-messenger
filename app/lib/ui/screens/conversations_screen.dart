@@ -252,13 +252,22 @@ class ConversationsScreen extends StatelessWidget {
                   title: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '@${contact.username}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: DirectTheme.textPrimary,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '@${contact.username}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: DirectTheme.textPrimary,
+                            ),
+                          ),
+                          if (contact.isVerified) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified, size: 14, color: DirectTheme.success),
+                          ],
+                        ],
                       ),
                       if (lastMsg != null)
                         Text(

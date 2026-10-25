@@ -69,3 +69,17 @@ class ConversationSummary {
     this.unreadCount = 0,
   });
 }
+
+class VerificationResult {
+  final bool isValid;
+  final bool isMismatch;
+  final String? errorMessage;
+  final String? matchedUsername;
+
+  VerificationResult({
+    required this.isValid,
+    this.isMismatch = false,
+    this.errorMessage,
+    this.matchedUsername,
+  });
+}

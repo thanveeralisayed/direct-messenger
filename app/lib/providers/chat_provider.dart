@@ -98,6 +98,46 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setContactVerified(String username, bool isVerified) async {
+    final targetUser = username.toLowerCase();
+    await _db.updateContactVerification(targetUser, isVerified);
+    if (_activeChatUser == targetUser) {
+      _activeContact = await _db.getContact(targetUser);
+    }
+    await loadConversations();
+    notifyListeners();
+  }
+
+  VerificationResult verifyScannedQr(String scannedData, String targetUsername) {
+    if (!scannedData.startsWith('direct:key:')) {
+      return VerificationResult(isValid: false, errorMessage: 'Invalid Direct QR code format');
+    }
+    final parts = scannedData.split(':');
+    if (parts.length < 4) {
+      return VerificationResult(isValid: false, errorMessage: 'Malformed QR code payload');
+    }
+    final qrUsername = parts[2].toLowerCase();
+    final qrPubKey = parts.sublist(3).join(':');
+
+    if (qrUsername != targetUsername.toLowerCase()) {
+      return VerificationResult(
+        isValid: false,
+        errorMessage: 'QR code belongs to @$qrUsername, but you are verifying @$targetUsername',
+      );
+    }
+
+    final storedPubKey = _activeContact?.identityPublicKey;
+    if (storedPubKey != null && storedPubKey != qrPubKey) {
+      return VerificationResult(
+        isValid: false,
+        isMismatch: true,
+        errorMessage: 'CRITICAL SECURITY WARNING: Public key does NOT match! Possible Man-in-the-Middle attack.',
+      );
+    }
+
+    return VerificationResult(isValid: true, matchedUsername: qrUsername);
+  }
+
   Future<ContactModel?> addContact(String username) async {
     final cleanUser = username.trim().toLowerCase();
     if (cleanUser == authProvider.username) {

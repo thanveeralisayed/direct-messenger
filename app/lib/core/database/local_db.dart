@@ -105,6 +105,16 @@ class LocalDatabase {
     );
   }
 
+  Future<void> updateContactVerification(String username, bool isVerified) async {
+    final db = await database;
+    await db.update(
+      'contacts',
+      {'is_verified': isVerified ? 1 : 0},
+      where: 'username = ?',
+      whereArgs: [username.toLowerCase()],
+    );
+  }
+
   Future<ContactModel?> getContact(String username) async {
     final db = await database;
     final maps = await db.query(

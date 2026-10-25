@@ -465,13 +465,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '@${widget.contact.username}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: DirectTheme.textPrimary,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '@${widget.contact.username}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: DirectTheme.textPrimary,
+                          ),
+                        ),
+                        if (chat.activeContact?.isVerified ?? widget.contact.isVerified) ...[
+                          const SizedBox(width: 5),
+                          const Icon(Icons.verified, size: 15, color: DirectTheme.success),
+                        ],
+                      ],
                     ),
                     Row(
                       children: [
@@ -503,7 +511,14 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             IconButton(
               tooltip: 'Verify Safety Number',
-              icon: const Icon(Icons.security, color: DirectTheme.primary),
+              icon: Icon(
+                (chat.activeContact?.isVerified ?? widget.contact.isVerified)
+                    ? Icons.verified_user
+                    : Icons.security,
+                color: (chat.activeContact?.isVerified ?? widget.contact.isVerified)
+                    ? DirectTheme.success
+                    : DirectTheme.primary,
+              ),
               onPressed: () {
                 showDialog(
                   context: context,
@@ -511,6 +526,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     username: widget.contact.username,
                     publicKey: widget.contact.identityPublicKey,
                     safetyNumber: widget.contact.safetyNumber,
+                    isVerified: chat.activeContact?.isVerified ?? widget.contact.isVerified,
+                    isPeer: true,
                   ),
                 );
               },
