@@ -63,15 +63,21 @@ class RelayClient {
   Future<Map<String, dynamic>> login({
     required String username,
     required String password,
+    String? identityPublicKey,
   }) async {
     final uri = Uri.parse('$baseUrl/api/v1/auth/login');
+    final payload = <String, dynamic>{
+      'username': username,
+      'password': password,
+    };
+    if (identityPublicKey != null) {
+      payload['identityPublicKey'] = identityPublicKey;
+    }
+
     final response = await http.post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-      }),
+      body: jsonEncode(payload),
     );
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;

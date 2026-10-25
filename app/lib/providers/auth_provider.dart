@@ -135,41 +135,51 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final cleanUser = username.trim().toLowerCase();
+      final savedUser = await _keyStorage.getUsername();
+      final savedPrivKey = await _keyStorage.getPrivateKey();
+      final savedPubKey = await _keyStorage.getPublicKey();
+
+      SimpleKeyPair keyPair;
+      String pubKeyStr;
+
+      if (savedUser == cleanUser && savedPrivKey != null && savedPubKey != null) {
+        keyPair = await _crypto.importPrivateKey(savedPrivKey);
+        pubKeyStr = savedPubKey;
+      } else {
+        keyPair = await _crypto.generateIdentityKeyPair();
+        pubKeyStr = await _crypto.exportPublicKey(keyPair);
+        final newPrivStr = await _crypto.exportPrivateKey(keyPair);
+        await _keyStorage.saveAuthSession(
+          token: '',
+          username: cleanUser,
+          privateKeyBase64: newPrivStr,
+          publicKeyBase64: pubKeyStr,
+        );
+      }
+
       final result = await _relayClient.login(
-        username: username,
+        username: cleanUser,
         password: password,
+        identityPublicKey: pubKeyStr,
       );
 
       final token = result['token'] as String;
       final serverUsername = (result['username'] as String).toLowerCase();
-      final serverPubKey = result['identityPublicKey'] as String;
+      final finalPubKey = (result['identityPublicKey'] as String?) ?? pubKeyStr;
 
-      // Check if this device already holds the private key for this user
-      final savedUser = await _keyStorage.getUsername();
-      final savedPrivKey = await _keyStorage.getPrivateKey();
-
-      SimpleKeyPair keyPair;
-      if (savedUser == serverUsername && savedPrivKey != null) {
-        keyPair = await _crypto.importPrivateKey(savedPrivKey);
-      } else {
-        // If logging in on a new device where private key does not exist yet:
-        // In a zero-knowledge E2EE system, generate a new device keypair or prompt.
-        // For initial stage, generate new keypair and use for new messages.
-        keyPair = await _crypto.generateIdentityKeyPair();
-        final newPrivStr = await _crypto.exportPrivateKey(keyPair);
-        await _keyStorage.saveAuthSession(
-          token: token,
-          username: serverUsername,
-          privateKeyBase64: newPrivStr,
-          publicKeyBase64: serverPubKey,
-        );
-      }
+      await _keyStorage.saveAuthSession(
+        token: token,
+        username: serverUsername,
+        privateKeyBase64: await _keyStorage.getPrivateKey() ?? '',
+        publicKeyBase64: finalPubKey,
+      );
 
       _username = serverUsername;
       _token = token;
       _identityKeyPair = keyPair;
-      _publicKeyBase64 = serverPubKey;
-      _safetyNumber = await _crypto.generateFingerprint(serverPubKey);
+      _publicKeyBase64 = finalPubKey;
+      _safetyNumber = await _crypto.generateFingerprint(finalPubKey);
 
       _relayClient.connect(token);
 

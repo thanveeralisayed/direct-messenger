@@ -89,6 +89,15 @@ export class UserDatabase {
     return record ? record.identityPublicKey : null;
   }
 
+  public updatePublicKey(username: string, newPublicKey: string): void {
+    const normalized = username.trim().toLowerCase();
+    const record = this.users.get(normalized);
+    if (record) {
+      record.identityPublicKey = newPublicKey;
+      this.save();
+    }
+  }
+
   public userExists(username: string): boolean {
     return this.users.has(username.trim().toLowerCase());
   }

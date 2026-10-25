@@ -202,11 +202,28 @@ class ChatProvider extends ChangeNotifier {
       throw Exception('Could not resolve recipient contact');
     }
 
+    // Sync latest recipient public key from directory in case it changed
+    try {
+      final keyInfo = await authProvider.relayClient.getPublicKey(targetUser);
+      final currentPubKey = keyInfo['identityPublicKey'] as String?;
+      if (currentPubKey != null && currentPubKey != contact.identityPublicKey) {
+        final newFp = await _crypto.generateFingerprint(currentPubKey);
+        contact = contact.copyWith(
+          identityPublicKey: currentPubKey,
+          safetyNumber: newFp,
+          isVerified: false,
+        );
+        await _db.saveContact(contact);
+      }
+    } catch (_) {}
+
+    final targetContact = contact!;
+
     // 2. Prepare message metadata with disappearing timer
     final messageId = _uuid.v4();
     final now = DateTime.now().millisecondsSinceEpoch;
-    final int? expiresAt = (contact.disappearingSeconds > 0)
-        ? now + (contact.disappearingSeconds * 1000)
+    final int? expiresAt = (targetContact.disappearingSeconds > 0)
+        ? now + (targetContact.disappearingSeconds * 1000)
         : null;
 
     final localMsg = MessageModel(
@@ -232,7 +249,7 @@ class ChatProvider extends ChangeNotifier {
 
     // 3. Encrypt payload with recipient's public key (E2EE)
     try {
-      final recipientPublicKey = _crypto.importPublicKey(contact.identityPublicKey);
+      final recipientPublicKey = _crypto.importPublicKey(targetContact.identityPublicKey);
       final encryptedPayload = await _crypto.encryptMessage(
         plaintext: plaintext,
         recipientPublicKey: recipientPublicKey,
@@ -246,7 +263,7 @@ class ChatProvider extends ChangeNotifier {
         ephemeralPublicKey: encryptedPayload.ephemeralPublicKey,
         iv: encryptedPayload.iv,
         ciphertext: encryptedPayload.ciphertext,
-        disappearingSeconds: contact.disappearingSeconds,
+        disappearingSeconds: targetContact.disappearingSeconds,
       );
     } catch (e) {
       await _db.updateMessageStatus(messageId, MessageStatus.failed);
@@ -423,6 +440,26 @@ class ChatProvider extends ChangeNotifier {
       await loadConversations();
     } catch (err) {
       debugPrint('Failed to decrypt incoming packet from $from: $err');
+      final isCurrentlyOpen = _activeChatUser == from;
+      final failMsg = MessageModel(
+        id: id,
+        conversationUser: from,
+        sender: from,
+        recipient: authProvider.username!,
+        content: '🔒 Message could not be decrypted (Security key mismatch. Re-add contact or sign in again to sync keys)',
+        timestamp: timestamp,
+        status: isCurrentlyOpen ? MessageStatus.read : MessageStatus.delivered,
+        isOutgoing: false,
+        expiresAt: expiresAt,
+        messageType: 'text',
+      );
+      await _db.saveMessage(failMsg);
+      authProvider.relayClient.sendDeliveryAck(messageId: id, sender: from);
+      if (isCurrentlyOpen) {
+        _activeMessages.add(failMsg);
+        notifyListeners();
+      }
+      await loadConversations();
     }
   }
 

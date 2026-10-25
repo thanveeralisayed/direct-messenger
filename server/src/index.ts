@@ -88,6 +88,13 @@ async function start() {
       return reply.code(401).send({ error: 'Invalid username or credentials' });
     }
 
+    const { identityPublicKey } = request.body || {};
+    if (identityPublicKey && typeof identityPublicKey === 'string' && identityPublicKey.length > 20 && identityPublicKey !== user.identityPublicKey) {
+      db.updatePublicKey(user.username, identityPublicKey);
+      user.identityPublicKey = identityPublicKey;
+      console.log(`[Auth] Updated public key for user @${user.username} upon login`);
+    }
+
     const token = generateToken(user.username);
     return reply.send({
       token,

@@ -20,6 +20,7 @@ export interface RegisterRequest {
 export interface LoginRequest {
   username: string;
   password: string;
+  identityPublicKey?: string;
 }
 
 export interface AuthResponse {
