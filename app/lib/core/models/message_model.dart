@@ -15,6 +15,7 @@ class MessageModel {
   final int timestamp; // Milliseconds epoch
   final MessageStatus status;
   final bool isOutgoing;
+  final int? expiresAt; // Epoch ms when message should auto-delete (or null if never)
 
   MessageModel({
     required this.id,
@@ -25,7 +26,13 @@ class MessageModel {
     required this.timestamp,
     required this.status,
     required this.isOutgoing,
+    this.expiresAt,
   });
+
+  bool get isExpired {
+    if (expiresAt == null || expiresAt! <= 0) return false;
+    return DateTime.now().millisecondsSinceEpoch >= expiresAt!;
+  }
 
   MessageModel copyWith({
     String? id,
@@ -36,6 +43,7 @@ class MessageModel {
     int? timestamp,
     MessageStatus? status,
     bool? isOutgoing,
+    int? expiresAt,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -46,6 +54,7 @@ class MessageModel {
       timestamp: timestamp ?? this.timestamp,
       status: status ?? this.status,
       isOutgoing: isOutgoing ?? this.isOutgoing,
+      expiresAt: expiresAt ?? this.expiresAt,
     );
   }
 
@@ -59,6 +68,7 @@ class MessageModel {
       'timestamp': timestamp,
       'status': status.name,
       'is_outgoing': isOutgoing ? 1 : 0,
+      'expires_at': expiresAt,
     };
   }
 
@@ -75,6 +85,7 @@ class MessageModel {
         orElse: () => MessageStatus.sent,
       ),
       isOutgoing: (map['is_outgoing'] as int) == 1,
+      expiresAt: map['expires_at'] as int?,
     );
   }
 }

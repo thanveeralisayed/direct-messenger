@@ -10,6 +10,9 @@ class LocalDatabase {
 
   LocalDatabase._internal();
 
+  // Constructor for in-memory or custom database testing
+  LocalDatabase.withDatabase(Database db) : _db = db;
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDatabase();
@@ -22,7 +25,7 @@ class LocalDatabase {
 
     return await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE contacts (
@@ -30,7 +33,8 @@ class LocalDatabase {
             identity_public_key TEXT NOT NULL,
             safety_number TEXT NOT NULL,
             is_verified INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            disappearing_seconds INTEGER NOT NULL DEFAULT 0
           )
         ''');
 
@@ -43,7 +47,8 @@ class LocalDatabase {
             content TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             status TEXT NOT NULL,
-            is_outgoing INTEGER NOT NULL
+            is_outgoing INTEGER NOT NULL,
+            expires_at INTEGER
           )
         ''');
 
@@ -51,6 +56,22 @@ class LocalDatabase {
           CREATE INDEX idx_messages_conversation 
           ON messages (conversation_user, timestamp ASC)
         ''');
+
+        await db.execute('''
+          CREATE INDEX idx_messages_expires 
+          ON messages (expires_at)
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          try {
+            await db.execute('ALTER TABLE contacts ADD COLUMN disappearing_seconds INTEGER NOT NULL DEFAULT 0');
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages (expires_at)');
+          } catch (_) {}
+        }
       },
     );
   }
@@ -63,6 +84,16 @@ class LocalDatabase {
       'contacts',
       contact.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> updateContactDisappearingTimer(String username, int seconds) async {
+    final db = await database;
+    await db.update(
+      'contacts',
+      {'disappearing_seconds': seconds},
+      where: 'username = ?',
+      whereArgs: [username.toLowerCase()],
     );
   }
 
@@ -84,7 +115,19 @@ class LocalDatabase {
     return maps.map((m) => ContactModel.fromMap(m)).toList();
   }
 
-  // --- Messages ---
+  // --- Messages & Disappearing Messages Purge ---
+
+  /// Purges any messages whose expires_at timestamp has passed
+  Future<int> purgeExpiredMessages([int? nowMs]) async {
+    final db = await database;
+    final currentTime = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final count = await db.delete(
+      'messages',
+      where: 'expires_at IS NOT NULL AND expires_at > 0 AND expires_at <= ?',
+      whereArgs: [currentTime],
+    );
+    return count;
+  }
 
   Future<void> saveMessage(MessageModel message) async {
     final db = await database;
@@ -105,27 +148,32 @@ class LocalDatabase {
     );
   }
 
-  Future<List<MessageModel>> getMessages(String conversationUser) async {
+  Future<List<MessageModel>> getMessages(String conversationUser, [int? nowMs]) async {
+    await purgeExpiredMessages(nowMs);
     final db = await database;
+    final currentTime = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final maps = await db.query(
       'messages',
-      where: 'conversation_user = ?',
-      whereArgs: [conversationUser.toLowerCase()],
+      where: 'conversation_user = ? AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?)',
+      whereArgs: [conversationUser.toLowerCase(), currentTime],
       orderBy: 'timestamp ASC',
     );
     return maps.map((m) => MessageModel.fromMap(m)).toList();
   }
 
-  Future<List<ConversationSummary>> getConversations() async {
+  Future<List<ConversationSummary>> getConversations([int? nowMs]) async {
+    await purgeExpiredMessages(nowMs);
     final contacts = await getAllContacts();
     final summaries = <ConversationSummary>[];
 
     final db = await database;
+    final currentTime = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+
     for (final contact in contacts) {
       final latestMsgQuery = await db.query(
         'messages',
-        where: 'conversation_user = ?',
-        whereArgs: [contact.username.toLowerCase()],
+        where: 'conversation_user = ? AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?)',
+        whereArgs: [contact.username.toLowerCase(), currentTime],
         orderBy: 'timestamp DESC',
         limit: 1,
       );
@@ -139,8 +187,9 @@ class LocalDatabase {
         '''
         SELECT COUNT(*) as count FROM messages 
         WHERE conversation_user = ? AND is_outgoing = 0 AND status != 'read'
+        AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?)
         ''',
-        [contact.username.toLowerCase()],
+        [contact.username.toLowerCase(), currentTime],
       );
       final unreadCount = (unreadCountQuery.first['count'] as int?) ?? 0;
 

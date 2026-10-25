@@ -29,32 +29,36 @@ async function run() {
   const health = await request('/api/v1/health');
   console.log('   Health response:', health);
 
+  const id = Date.now().toString().slice(-5);
+  const aliceName = `alice_${id}`;
+  const bobName = `bob_${id}`;
+
   // 2. Register Alice and Bob
-  console.log('2. Registering Alice and Bob...');
+  console.log(`2. Registering ${aliceName} and ${bobName}...`);
   const aliceReg = await request('/api/v1/auth/register', {
     method: 'POST',
     body: JSON.stringify({
-      username: 'alice',
+      username: aliceName,
       password: 'alicepassword123',
       identityPublicKey: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA-alice-public-key',
     }),
   });
-  console.log('   Alice registered:', aliceReg.username, 'Token:', aliceReg.token.slice(0, 8) + '...');
+  console.log(`   ${aliceName} registered:`, aliceReg.username, 'Token:', aliceReg.token.slice(0, 8) + '...');
 
   const bobReg = await request('/api/v1/auth/register', {
     method: 'POST',
     body: JSON.stringify({
-      username: 'bob',
+      username: bobName,
       password: 'bobpassword123',
       identityPublicKey: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA-bob-public-key',
     }),
   });
-  console.log('   Bob registered:', bobReg.username, 'Token:', bobReg.token.slice(0, 8) + '...');
+  console.log(`   ${bobName} registered:`, bobReg.username, 'Token:', bobReg.token.slice(0, 8) + '...');
 
   // 3. Key Directory Lookup
-  console.log('3. Looking up Bob public key...');
-  const bobKeyLookup = await request('/api/v1/users/bob/key');
-  console.log('   Found Bob key:', bobKeyLookup.identityPublicKey.slice(0, 30) + '...');
+  console.log(`3. Looking up ${bobName} public key...`);
+  const bobKeyLookup = await request(`/api/v1/users/${bobName}/key`);
+  console.log(`   Found ${bobName} key:`, bobKeyLookup.identityPublicKey.slice(0, 30) + '...');
 
   // 4. WebSocket connection for Alice
   console.log('4. Connecting Alice over WebSocket...');
@@ -102,36 +106,41 @@ async function run() {
     });
   });
 
-  // 6. Alice sends encrypted packet to Bob
-  console.log('6. Alice sending message to Bob...');
+  // 6. Alice sends encrypted packet to Bob with disappearing timer
+  console.log('6. Alice sending message to Bob with disappearingSeconds: 30...');
   const messagePacket = {
     type: 'message',
     id: 'msg-uuid-001',
-    to: 'bob',
+    to: bobName,
     timestamp: Date.now(),
     ephemeralPublicKey: 'base64-ephemeral-key',
     iv: 'base64-12-byte-iv',
     ciphertext: 'base64-aes-gcm-encrypted-secret-hello-bob',
+    disappearingSeconds: 30,
   };
   aliceWs.send(JSON.stringify(messagePacket));
 
-  await bobReceivedPromise;
+  const bobReceived = await bobReceivedPromise;
+  if (bobReceived.disappearingSeconds !== 30) {
+    throw new Error(`Expected disappearingSeconds 30, got ${bobReceived.disappearingSeconds}`);
+  }
   await aliceReceiptPromise;
-  console.log('   Instant relay and delivery receipt verified successfully!');
+  console.log('   Instant relay, disappearingSeconds=30, and delivery receipt verified successfully!');
 
   // 7. Test Offline In-Memory Buffering: Close Bob, send message from Alice, then Bob reconnects
-  console.log('7. Testing offline RAM buffering...');
+  console.log('7. Testing offline RAM buffering with disappearingSeconds: 60...');
   bobWs.close();
   await wait(500);
 
   const offlineMsgPacket = {
     type: 'message',
     id: 'msg-uuid-002',
-    to: 'bob',
+    to: bobName,
     timestamp: Date.now(),
     ephemeralPublicKey: 'base64-ephemeral-key-2',
     iv: 'base64-12-byte-iv-2',
     ciphertext: 'base64-aes-gcm-offline-secret',
+    disappearingSeconds: 60,
   };
 
   aliceWs.send(JSON.stringify(offlineMsgPacket));
@@ -144,13 +153,16 @@ async function run() {
       const msg = JSON.parse(raw.toString());
       if (msg.type === 'message' && msg.id === 'msg-uuid-002') {
         console.log('   [Bob received buffered message]:', msg);
+        if (msg.disappearingSeconds !== 60) {
+          throw new Error(`Expected buffered disappearingSeconds 60, got ${msg.disappearingSeconds}`);
+        }
         resolve(msg);
       }
     });
   });
 
   await bufferedReceivedPromise;
-  console.log('   Buffered message delivered and verified!');
+  console.log('   Buffered message delivered with disappearingSeconds=60 preserved and verified!');
 
   aliceWs.close();
   bobWs2.close();

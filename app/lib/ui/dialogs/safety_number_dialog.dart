@@ -34,10 +34,12 @@ class SafetyNumberDialog extends StatelessWidget {
           ),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      content: SizedBox(
+        width: 320,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             const Text(
               'Compare this safety number or scan the QR code to ensure your end-to-end encryption is not intercepted.',
               style: TextStyle(color: DirectTheme.textSecondary, fontSize: 13),
@@ -82,6 +84,7 @@ class SafetyNumberDialog extends StatelessWidget {
           ],
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

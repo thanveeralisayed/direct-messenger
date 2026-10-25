@@ -19,6 +19,9 @@ class ChatProvider extends ChangeNotifier {
   String? _activeChatUser;
   String? get activeChatUser => _activeChatUser;
 
+  ContactModel? _activeContact;
+  ContactModel? get activeContact => _activeContact;
+
   List<MessageModel> _activeMessages = [];
   List<MessageModel> get activeMessages => _activeMessages;
 
@@ -29,10 +32,12 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription? _ackSub;
   StreamSubscription? _deliverySub;
   StreamSubscription? _typingSub;
+  Timer? _purgeTimer;
 
   ChatProvider({required this.authProvider}) {
     _bindRelayEvents();
     loadConversations();
+    _startPeriodicPurge();
   }
 
   void _bindRelayEvents() {
@@ -44,6 +49,20 @@ class ChatProvider extends ChangeNotifier {
     _typingSub = relay.onTyping.listen(_handleTypingIndicator);
   }
 
+  void _startPeriodicPurge() {
+    _purgeTimer?.cancel();
+    _purgeTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      final purged = await _db.purgeExpiredMessages();
+      if (purged > 0) {
+        if (_activeChatUser != null) {
+          _activeMessages = await _db.getMessages(_activeChatUser!);
+        }
+        await loadConversations();
+        notifyListeners();
+      }
+    });
+  }
+
   Future<void> loadConversations() async {
     _conversations = await _db.getConversations();
     notifyListeners();
@@ -51,6 +70,7 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> openChat(String username) async {
     _activeChatUser = username.toLowerCase();
+    _activeContact = await _db.getContact(_activeChatUser!);
     await _db.markConversationAsRead(_activeChatUser!);
     _activeMessages = await _db.getMessages(_activeChatUser!);
     loadConversations();
@@ -59,7 +79,18 @@ class ChatProvider extends ChangeNotifier {
 
   void closeChat() {
     _activeChatUser = null;
+    _activeContact = null;
     _activeMessages = [];
+    notifyListeners();
+  }
+
+  Future<void> setDisappearingTimer(String username, int seconds) async {
+    final targetUser = username.toLowerCase();
+    await _db.updateContactDisappearingTimer(targetUser, seconds);
+    if (_activeChatUser == targetUser) {
+      _activeContact = await _db.getContact(targetUser);
+    }
+    await loadConversations();
     notifyListeners();
   }
 
@@ -108,9 +139,12 @@ class ChatProvider extends ChangeNotifier {
       throw Exception('Could not resolve recipient contact');
     }
 
-    // 2. Prepare message metadata
+    // 2. Prepare message metadata with disappearing timer
     final messageId = _uuid.v4();
     final now = DateTime.now().millisecondsSinceEpoch;
+    final int? expiresAt = (contact.disappearingSeconds > 0)
+        ? now + (contact.disappearingSeconds * 1000)
+        : null;
 
     final localMsg = MessageModel(
       id: messageId,
@@ -121,6 +155,7 @@ class ChatProvider extends ChangeNotifier {
       timestamp: now,
       status: MessageStatus.pending,
       isOutgoing: true,
+      expiresAt: expiresAt,
     );
 
     // Save to local SQLite
@@ -147,6 +182,7 @@ class ChatProvider extends ChangeNotifier {
         ephemeralPublicKey: encryptedPayload.ephemeralPublicKey,
         iv: encryptedPayload.iv,
         ciphertext: encryptedPayload.ciphertext,
+        disappearingSeconds: contact.disappearingSeconds,
       );
     } catch (e) {
       await _db.updateMessageStatus(messageId, MessageStatus.failed);
@@ -161,6 +197,7 @@ class ChatProvider extends ChangeNotifier {
     final id = packet['id'] as String;
     final from = (packet['from'] as String).toLowerCase();
     final timestamp = packet['timestamp'] as int;
+    final packetTtl = packet['disappearingSeconds'] as int?;
 
     // Check if we already processed this message
     final existing = await _db.getMessages(from);
@@ -173,6 +210,18 @@ class ChatProvider extends ChangeNotifier {
         contact = await addContact(from);
       } catch (_) {}
     }
+
+    // Sync disappearing timer if packet specifies one
+    if (packetTtl != null && contact != null && contact.disappearingSeconds != packetTtl) {
+      await _db.updateContactDisappearingTimer(from, packetTtl);
+      contact = contact.copyWith(disappearingSeconds: packetTtl);
+      if (_activeChatUser == from) {
+        _activeContact = contact;
+      }
+    }
+
+    final effectiveTtl = packetTtl ?? contact?.disappearingSeconds ?? 0;
+    final int? expiresAt = (effectiveTtl > 0) ? timestamp + (effectiveTtl * 1000) : null;
 
     try {
       // Decrypt message payload locally
@@ -197,6 +246,7 @@ class ChatProvider extends ChangeNotifier {
         timestamp: timestamp,
         status: isCurrentlyOpen ? MessageStatus.read : MessageStatus.delivered,
         isOutgoing: false,
+        expiresAt: expiresAt,
       );
 
       await _db.saveMessage(msg);
@@ -263,6 +313,7 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _purgeTimer?.cancel();
     _msgSub?.cancel();
     _ackSub?.cancel();
     _deliverySub?.cancel();

@@ -202,6 +202,7 @@ class RelayClient {
     required String ephemeralPublicKey,
     required String iv,
     required String ciphertext,
+    int? disappearingSeconds,
   }) {
     sendRaw({
       'type': 'message',
@@ -211,6 +212,8 @@ class RelayClient {
       'ephemeralPublicKey': ephemeralPublicKey,
       'iv': iv,
       'ciphertext': ciphertext,
+      if (disappearingSeconds != null && disappearingSeconds > 0)
+        'disappearingSeconds': disappearingSeconds,
     });
   }
 

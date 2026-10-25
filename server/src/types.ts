@@ -44,6 +44,7 @@ export type WSClientFrame =
       ephemeralPublicKey: string; // Base64 X25519 key for ECDH
       iv: string; // Base64 12-byte IV for AES-256-GCM
       ciphertext: string; // Base64 ciphertext (E2EE)
+      disappearingSeconds?: number;
     }
   | { type: 'delivery_ack'; id: string; sender: string }
   | { type: 'read_receipt'; id: string; sender: string }
@@ -61,6 +62,7 @@ export type WSServerFrame =
       ephemeralPublicKey: string;
       iv: string;
       ciphertext: string;
+      disappearingSeconds?: number;
     }
   | { type: 'server_ack'; id: string; status: 'relayed' | 'buffered' }
   | { type: 'delivery_receipt'; id: string; recipient: string; timestamp: number }

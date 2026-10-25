@@ -6,6 +6,7 @@ class ContactModel {
   final String safetyNumber;
   final bool isVerified;
   final int createdAt;
+  final int disappearingSeconds; // 0 = off, 30 = 30s, 3600 = 1h, 86400 = 24h, 604800 = 7d
 
   ContactModel({
     required this.username,
@@ -13,6 +14,7 @@ class ContactModel {
     required this.safetyNumber,
     this.isVerified = false,
     required this.createdAt,
+    this.disappearingSeconds = 0,
   });
 
   ContactModel copyWith({
@@ -21,6 +23,7 @@ class ContactModel {
     String? safetyNumber,
     bool? isVerified,
     int? createdAt,
+    int? disappearingSeconds,
   }) {
     return ContactModel(
       username: username ?? this.username,
@@ -28,6 +31,7 @@ class ContactModel {
       safetyNumber: safetyNumber ?? this.safetyNumber,
       isVerified: isVerified ?? this.isVerified,
       createdAt: createdAt ?? this.createdAt,
+      disappearingSeconds: disappearingSeconds ?? this.disappearingSeconds,
     );
   }
 
@@ -38,6 +42,7 @@ class ContactModel {
       'safety_number': safetyNumber,
       'is_verified': isVerified ? 1 : 0,
       'created_at': createdAt,
+      'disappearing_seconds': disappearingSeconds,
     };
   }
 
@@ -48,6 +53,7 @@ class ContactModel {
       safetyNumber: map['safety_number'] as String,
       isVerified: (map['is_verified'] as int) == 1,
       createdAt: map['created_at'] as int,
+      disappearingSeconds: (map['disappearing_seconds'] as int?) ?? 0,
     );
   }
 }

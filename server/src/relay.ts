@@ -75,6 +75,7 @@ export class EphemeralRelay {
           ephemeralPublicKey: frame.ephemeralPublicKey,
           iv: frame.iv,
           ciphertext: frame.ciphertext,
+          disappearingSeconds: frame.disappearingSeconds,
         };
 
         const recipientSocket = this.activeConnections.get(recipient);
